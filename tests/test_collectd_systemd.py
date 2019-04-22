@@ -72,14 +72,14 @@ def test_get_unit(configured_mon):
 def test_get_service_state(configured_mon):
     with mock.patch.object(configured_mon, 'get_unit') as m:
         m().Get.return_value = 'running'
-        state = configured_mon.get_service_state('foo')
+        state = configured_mon.get_service_state('foo', 'SubState')
         assert state == 'running'
     with mock.patch('dbus.Interface', side_effect=dbus.exceptions.DBusException):
-        state = configured_mon.get_service_state('missing')
+        state = configured_mon.get_service_state('missing', 'SubState')
         assert state == 'broken'
     with mock.patch.object(configured_mon, 'get_unit') as m:
         m().Get.side_effect=dbus.exceptions.DBusException
-        state = configured_mon.get_service_state('broken-cache')
+        state = configured_mon.get_service_state('broken-cache', 'SubState')
         assert state == 'broken'
 
 
