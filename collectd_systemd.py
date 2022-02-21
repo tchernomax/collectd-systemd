@@ -14,6 +14,7 @@ class SystemD(object):
         self.verbose_logging = False
         self.services = []
         self.service_states = set()
+        self.service_properties = set()
         self.units = {}
 
     def log_verbose(self, msg):
@@ -42,13 +43,13 @@ class SystemD(object):
             self.units[name] = unit
         return self.units[name]
 
-    def get_service_state(self, name, state):
+    def get_service_property(self, name, property_):
         unit = self.get_unit(name)
         if not unit:
             return 'broken'
         else:
             try:
-                return unit.Get('org.freedesktop.systemd1.Unit', state)
+                return unit.Get('org.freedesktop.systemd1.Unit', property_)
             except dbus.exceptions.DBusException as e:
                 self.log_verbose('{} plugin: failed to monitor unit {}: {}'.format(self.plugin_name, name, e))
                 return 'broken'
@@ -60,6 +61,8 @@ class SystemD(object):
                 self.services.extend(vals)
             elif node.key == 'ServiceStates':
                 self.service_states.update(set(vals))
+            elif node.key == 'ServiceProperties':
+                self.service_properties.update(set(vals))
             elif node.key == 'Interval':
                 self.interval = float(vals[0])
             elif node.key == 'Verbose':
@@ -92,49 +95,63 @@ class SystemD(object):
                 self._dispatch_substates(name)
             if self.LOAD_STATE in self.service_states:
                 self._dispatch_load_states(name)
+            if self.service_properties:
+                self._dispatch_properties(name)
 
     def _dispatch_active_states(self, name):
         full_name = name + '.service'
-        active_state = self.get_service_state(full_name, self.ACTIVE_STATE)
+        active_state = self.get_service_property(full_name, self.ACTIVE_STATE)
         if active_state == 'broken':
             self.log_verbose(
                 'Unit {0} reported as broken. Reinitializing the connection to dbus & retrying.'.format(full_name))
             self.init_dbus()
-            active_state = self.get_service_state(full_name, self.ACTIVE_STATE)
-        self._dispatch('gauge', name, 'active_state.active', int('active' == active_state), active_state)
-        self._dispatch('gauge', name, 'active_state.inactive', int('inactive' == active_state), active_state)
-        self._dispatch('gauge', name, 'active_state.activating', int('activating' == active_state), active_state)
-        self._dispatch('gauge', name, 'active_state.deactivating', int('deactivating' == active_state), active_state)
-        self._dispatch('gauge', name, 'active_state.reloading', int('reloading' == active_state), active_state)
-        self._dispatch('gauge', name, 'active_state.failed', int('failed' == active_state), active_state)
+            active_state = self.get_service_property(full_name, self.ACTIVE_STATE)
+        self._dispatch_state('gauge', name, 'active_state.active', int('active' == active_state), active_state)
+        self._dispatch_state('gauge', name, 'active_state.inactive', int('inactive' == active_state), active_state)
+        self._dispatch_state('gauge', name, 'active_state.activating', int('activating' == active_state), active_state)
+        self._dispatch_state('gauge', name, 'active_state.deactivating', int('deactivating' == active_state), active_state)
+        self._dispatch_state('gauge', name, 'active_state.reloading', int('reloading' == active_state), active_state)
+        self._dispatch_state('gauge', name, 'active_state.failed', int('failed' == active_state), active_state)
 
     def _dispatch_substates(self, name):
         full_name = name + '.service'
-        substate = self.get_service_state(full_name, self.SUB_STATE)
+        substate = self.get_service_property(full_name, self.SUB_STATE)
         if substate == 'broken':
             self.log_verbose(
                 'Unit {0} reported as broken. Reinitializing the connection to dbus & retrying.'.format(full_name))
             self.init_dbus()
-            substate = self.get_service_state(full_name, self.SUB_STATE)
-        self._dispatch('gauge', name, 'substate.running', int('running' == substate), substate)
-        self._dispatch('gauge', name, 'substate.exited', int('exited' == substate), substate)
-        self._dispatch('gauge', name, 'substate.failed', int('failed' == substate), substate)
-        self._dispatch('gauge', name, 'substate.dead', int('dead' == substate), substate)
+            substate = self.get_service_property(full_name, self.SUB_STATE)
+        self._dispatch_state('gauge', name, 'substate.running', int('running' == substate), substate)
+        self._dispatch_state('gauge', name, 'substate.exited', int('exited' == substate), substate)
+        self._dispatch_state('gauge', name, 'substate.failed', int('failed' == substate), substate)
+        self._dispatch_state('gauge', name, 'substate.dead', int('dead' == substate), substate)
 
     def _dispatch_load_states(self, name):
         full_name = name + '.service'
-        load_state = self.get_service_state(full_name, self.LOAD_STATE)
+        load_state = self.get_service_property(full_name, self.LOAD_STATE)
         if load_state == 'broken':
             self.log_verbose(
                 'Unit {0} reported as broken. Reinitializing the connection to dbus & retrying.'.format(full_name))
             self.init_dbus()
-            load_state = self.get_service_state(full_name, self.LOAD_STATE)
-        self._dispatch('gauge', name, 'load_state.loaded', int('loaded' == load_state), load_state)
-        self._dispatch('gauge', name, 'load_state.not-found', int('not-found' == load_state), load_state)
-        self._dispatch('gauge', name, 'load_state.error', int('error' == load_state), load_state)
-        self._dispatch('gauge', name, 'load_state.masked', int('masked' == load_state), load_state)
+            load_state = self.get_service_property(full_name, self.LOAD_STATE)
+        self._dispatch_state('gauge', name, 'load_state.loaded', int('loaded' == load_state), load_state)
+        self._dispatch_state('gauge', name, 'load_state.not-found', int('not-found' == load_state), load_state)
+        self._dispatch_state('gauge', name, 'load_state.error', int('error' == load_state), load_state)
+        self._dispatch_state('gauge', name, 'load_state.masked', int('masked' == load_state), load_state)
 
-    def _dispatch(self, _type, name, type_instance, value, state):
+    def _dispatch_properties(self, name):
+        full_name = name + '.service'
+        for property_ in self.service_properties:
+            load_value = self.get_service_property(full_name, property_)
+            if load_value == 'broken':
+                self.log_verbose(
+                    'Unit {0} reported as broken. Reinitializing the connection to dbus & retrying.'.format(full_name))
+                self.init_dbus()
+                load_value = self.get_service_property(full_name, property_)
+            
+            self._dispatch_value('gauge', name, property_, load_value)
+
+    def _dispatch_state(self, _type, name, type_instance, value, state):
         self.log_verbose('Sending value: {}.{}={} (state={})'.format(self.plugin_name, name, value, state))
         val = collectd.Values(
             type=_type,
@@ -145,6 +162,16 @@ class SystemD(object):
         val.plugin_instance += '[{dims}]'.format(dims='systemd_service='+name)
         val.dispatch()
 
+    def _dispatch_value(self, _type, name, type_instance, value):
+        self.log_verbose('Sending value: {}.{}={}'.format(self.plugin_name, name, value))
+        val = collectd.Values(
+            type=_type,
+            plugin=self.plugin_name,
+            type_instance=type_instance,
+            meta={'0': True},
+            values=[value])
+        val.plugin_instance += '[{dims}]'.format(dims='systemd_service='+name)
+        val.dispatch()
 
 mon = SystemD()
 collectd.register_config(mon.configure_callback)

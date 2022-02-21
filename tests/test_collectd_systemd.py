@@ -72,19 +72,19 @@ def test_get_unit(configured_mon):
 def test_get_service_state(configured_mon):
     with mock.patch.object(configured_mon, 'get_unit') as m:
         m().Get.return_value = 'running'
-        state = configured_mon.get_service_state('foo', 'SubState')
+        state = configured_mon.get_service_property('foo', 'SubState')
         assert state == 'running'
     with mock.patch('dbus.Interface', side_effect=dbus.exceptions.DBusException):
-        state = configured_mon.get_service_state('missing', 'SubState')
+        state = configured_mon.get_service_property('missing', 'SubState')
         assert state == 'broken'
     with mock.patch.object(configured_mon, 'get_unit') as m:
         m().Get.side_effect=dbus.exceptions.DBusException
-        state = configured_mon.get_service_state('broken-cache', 'SubState')
+        state = configured_mon.get_service_property('broken-cache', 'SubState')
         assert state == 'broken'
 
 
 def test_send_metrics(configured_mon):
-    with mock.patch.object(configured_mon, 'get_service_state') as m:
+    with mock.patch.object(configured_mon, 'get_service_property') as m:
         m.side_effect = ['running', 'failed', 'running']
         with mock.patch('collectd.Values') as val_mock:
             configured_mon.read_callback()
@@ -101,7 +101,7 @@ def test_send_metrics(configured_mon):
 
 
 def test_retry_if_broken(configured_mon):
-    with mock.patch.object(configured_mon, 'get_service_state') as m:
+    with mock.patch.object(configured_mon, 'get_service_property') as m:
         m.side_effect = ['broken', 'running', 'failed', 'running']
         with mock.patch.object(configured_mon, 'init_dbus') as idm:
             with mock.patch('collectd.Values') as val_mock:
